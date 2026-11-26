@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="es-CO">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pruebas de Princesa</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 16px; background: #FFF8F1; color: #3D2C2E; }
+    li.ok { color: #2F7D5B; } li.mal { color: #B3261E; font-weight: 700; }
+    #resumen { font-size: 1.2rem; font-weight: 800; }
+  </style>
+</head>
+<body>
+  <h1>Pruebas de la lógica</h1>
+  <p id="resumen"></p>
+  <ul id="lista"></ul>
+  <script src="js/data.js"></script>
+  <script src="js/logic.js"></script>
+  <script>
+  /* Pruebas con datos simulados de fechas, hambre, rachas y multiplicadores.
+     Abrir este archivo en el navegador: todo debe salir en verde. */
+  const res = [];
+  function prueba(nombre, fn) {
+    try { const r = fn(); res.push({ nombre, ok: r === true, detalle: r === true ? '' : String(r) }); }
+    catch (e) { res.push({ nombre, ok: false, detalle: e.message }); }
+  }
+  const igual = (a, b) => JSON.stringify(a) === JSON.stringify(b) ? true : 'esperaba ' + JSON.stringify(b) + ' y salió ' + JSON.stringify(a);
+  const HORA = 3600 * 1000;
+  // Tabla de metas fija solo para las pruebas de rachas y XP (no cambia si se editan las metas del juego)
+  const M = [
+    { desde: '2026-11-16', hasta: '2026-11-22', horas: 7, nota: '' },
+    { desde: '2026-11-23', hasta: '2026-11-29', horas: 6, nota: '' },
+    { desde: '2026-11-30', hasta: '2026-12-06', horas: 5, nota: '' },
+    { desde: '2026-12-07', hasta: '2027-01-17', horas: 4, nota: '' },
+    { desde: '2027-01-18', hasta: '2027-02-17', horas: 3.5, nota: '' },
+    { desde: '2027-02-18', hasta: '2027-03-17', horas: 3, nota: '' },
+    { desde: '2027-03-18', hasta: '2027-04-17', horas: 3, nota: 'Redes solo en dos franjas' },
+    { desde: '2027-04-18', hasta: '2027-05-18', horas: 2.5, nota: '' }
+  ];
+  // Registro que cumple (o no) con la meta, sin casillas extra
+  const reg = (horas, extra) => Object.assign({ horas, casillas: {}, contadores: {} }, extra || {});
+  function cadena(desde, horasLista) {
+    const r = {}; horasLista.forEach((h, i) => { if (h !== null) r[L.sumarDias(desde, i)] = reg(h); }); return r;
+  }
+
+  // ---------- Fechas ----------
+  prueba('sumarDias cruza fin de mes y de año', () => igual([L.sumarDias('2026-11-30', 1), L.sumarDias('2026-12-31', 1), L.sumarDias('2027-03-01', -1)], ['2026-12-01', '2027-01-01', '2027-02-28']));
+  prueba('diasEntre: temporada completa', () => igual(L.diasEntre('2026-11-18', '2027-05-18'), 181));
+  prueba('lunesDe: miércoles 18 nov 2026 → lunes 16', () => igual(L.lunesDe('2026-11-18'), '2026-11-16'));
+  prueba('lunesDe: domingo 22 nov → lunes 16', () => igual(L.lunesDe('2026-11-22'), '2026-11-16'));
+  prueba('esDomingo 22 nov 2026', () => igual([L.esDomingo('2026-11-22'), L.esDomingo('2026-11-23')], [true, false]));
+  prueba('aClave usa la fecha local', () => igual(L.aClave(new Date(2026, 10, 18, 23, 59)), '2026-11-18'));
+
+  // ---------- Metas ----------
+  prueba('Metas por fecha (bordes de cada tramo)', () => igual(
+    ['2026-11-18', '2026-11-22', '2026-11-23', '2026-12-06', '2026-12-07', '2026-12-18', '2027-01-18', '2027-02-18', '2027-03-18', '2027-04-18', '2027-05-18'].map(d => L.metaPara(M, d)),
+    [7, 7, 6, 5, 4, 4, 3.5, 3, 3, 2.5, 2.5]));
+  prueba('Metas sin ordenar también funcionan', () => igual(L.metaPara(M.slice().reverse(), '2026-11-25'), 6));
+  prueba('Antes de la temporada usa la primera meta; después, la última', () => igual([L.metaPara(M, '2026-10-01'), L.metaPara(M, '2027-08-01')], [7, 2.5]));
+  prueba('Nota de la meta de marzo', () => igual(L.notaMetaPara(M, '2027-03-20'), 'Redes solo en dos franjas'));
+  prueba('Metas del juego: empiezan en 9 h y bajan sin saltos grandes', () => igual(
+    ['2026-11-18', '2026-11-23', '2026-11-30', '2026-12-14', '2027-01-11', '2027-02-08', '2027-03-08', '2027-04-05', '2027-05-18'].map(d => L.metaPara(DATA.METAS, d)),
+    [9, 8, 7, 6, 5, 4, 3.5, 3, 3]));
+  prueba('Metas del juego: rangos seguidos, sin huecos ni días repetidos', () => {
+    const m = DATA.METAS;
+    for (let i = 1; i < m.length; i++) if (L.sumarDias(m[i - 1].hasta, 1) !== m[i].desde) return 'hueco entre ' + m[i - 1].hasta + ' y ' + m[i].desde;
+    return igual([m[0].desde <= '2026-11-18', m[m.length - 1].hasta], [true, '2027-05-18']);
+  });
+  prueba('Ninguna meta baja más de 1 h de un tramo al siguiente', () => {
+    const m = DATA.METAS;
+    for (let i = 1; i < m.length; i++) if (m[i - 1].horas - m[i].horas > 1) return 'salto en ' + m[i].desde;
+    return true;
+  });
+
+  // ---------- XP base ----------
+  prueba('Cumplir meta y quedar 1 h por debajo: 25 + 15', () => igual(L.xpBase(reg(5.9), 7).base, 40));
+  prueba('Justo en la meta: solo +25', () => igual(L.xpBase(reg(7), 7).base, 25));
+  prueba('Encima de la meta: 0 XP automáticos', () => igual(L.xpBase(reg(7.1), 7).base, 0));
+  prueba('Sin horas no cuenta como cumplida', () => igual(L.xpBase(reg(null), 7).cumplio, false));
+  prueba('Todas las casillas suman 95', () => {
+    const c = {}; DATA.CASILLAS.forEach(x => c[x.id] = true);
+    return igual(L.xpBase(reg(9, { casillas: c }), 7).base, 95);
+  });
+  prueba('Contadores respetan los máximos', () => igual(L.xpBase(reg(9, { contadores: { estudio: 9, screenzen: 9, reemplazo: 9, entregas: 2, retos10: 3 } }), 7).base, 4 * 10 + 5 * 3 + 2 * 20 + 2 * 30 + 3 * 5));
+
+  // ---------- Rachas y multiplicadores ----------
+  prueba('Multiplicador por racha', () => igual([0, 2, 3, 6, 7, 13, 14, 40].map(L.multiplicadorPara), [1, 1, 1.2, 1.2, 1.5, 1.5, 2, 2]));
+  prueba('Racha de 3 días seguidos', () => igual(L.rachaEn(cadena('2026-11-18', [5, 5, 5]), M, '2026-11-20'), 3));
+  prueba('Un día fallido corta la racha', () => igual(L.rachaEn(cadena('2026-11-18', [5, 5, 9, 5]), M, '2026-11-21'), 1));
+  prueba('Un día sin registro corta la racha', () => igual(L.rachaEn(cadena('2026-11-18', [5, 5, null, 5]), M, '2026-11-21'), 1));
+  prueba('El escudo protege la racha (sin sumar)', () => {
+    const r = cadena('2026-11-18', [5, 5, 9, 5]); r['2026-11-20'].escudo = true;
+    return igual(L.rachaEn(r, M, '2026-11-21'), 3);
+  });
+  prueba('Escudo: uno por semana (lunes a domingo)', () => {
+    const r = cadena('2026-11-16', [9, 9, 9, 9, 9, 9, 9, 9]); r['2026-11-17'].escudo = true;
+    return igual([L.escudoDisponible(r, '2026-11-17'), L.escudoDisponible(r, '2026-11-20'), L.escudoDisponible(r, '2026-11-23')], [true, false, true]);
+  });
+  prueba('XP del día 3 con racha: ×1,2', () => {
+    const r = cadena('2026-11-18', [5, 5, 5]);   // meta 7: 25 + 15 = 40 por día
+    return igual([L.xpDelDia(r, M, '2026-11-18').xp, L.xpDelDia(r, M, '2026-11-20').xp], [40, 48]);
+  });
+  prueba('Día 7 ×1,5 y día 14 ×2', () => {
+    const r = cadena('2026-12-18', Array(14).fill(2.5)); // meta 4: 25 + 15 = 40
+    return igual([L.xpDelDia(r, M, '2026-12-24').xp, L.xpDelDia(r, M, '2026-12-31').xp], [60, 80]);
+  });
+  prueba('Si fallo, el multiplicador vuelve a ×1 y lo demás cuenta', () => {
+    const r = cadena('2026-12-18', [2, 2, 2, 2, 2, 2, 2, 6]);
+    r['2026-12-25'].casillas = { ejercicio: true };
+    const d = L.xpDelDia(r, M, '2026-12-25');
+    return igual([d.mult, d.xp], [1, 20]);
+  });
+  prueba('Racha actual mira hasta ayer si hoy no se ha registrado', () => {
+    const r = cadena('2026-11-18', [5, 5, 5]);
+    return igual(L.rachaActual(r, M, '2026-11-21'), 3);
+  });
+  prueba('Mejor racha', () => igual(L.mejorRacha(cadena('2026-11-18', [5, 5, 5, 5, 9, 5, 5]), M), 4));
+
+  // ---------- Pancita y ánimo ----------
+  prueba('Pancita baja 4 por hora', () => igual(L.pancitaActual({ valor: 100, hora: 0 }, 5 * HORA), 80));
+  prueba('Pancita nunca baja de 0', () => igual(L.pancitaActual({ valor: 30, hora: 0 }, 50 * HORA), 0));
+  prueba('Se esconde a las 48 h sin comer, no antes', () => igual([L.estaEscondida(0, 47.9 * HORA), L.estaEscondida(0, 48 * HORA)], [false, true]));
+  prueba('Ánimos', () => igual([L.animoPara(10, 9), L.animoPara(30, 0), L.animoPara(30, 3), L.animoPara(80, 0), L.animoPara(80, 5), L.animoPara(55, 0)],
+    ['triste', 'aburrida', 'tranquila', 'feliz', 'juguetona', 'tranquila']));
+
+  // ---------- Niveles ----------
+  prueba('Bordes de nivel', () => igual([0, 750, 751, 2000, 2001, 4000, 4001, 7000, 7001, 11000, 11001, 16000, 16001, 99999].map(x => L.nivelPara(x).n), [1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7]));
+  prueba('Un mes típico (~90 XP/día) no pasa del nivel 3', () => igual(L.nivelPara(90 * 30).n, 3));
+  prueba('La temporada completa (~90 XP/día) llega a Cineasta', () => igual(L.nivelPara(90 * 181).n, 7));
+  prueba('Etapas de Princesa', () => igual([1, 2, 3, 4, 5, 6, 7].map(L.etapaPara), ['gatita', 'gatita', 'joven', 'joven', 'adulta', 'adulta', 'reina']));
+
+  // ---------- Misiones y jefes ----------
+  prueba('Misiones: 3 distintas y siempre las mismas para una semana', () => {
+    const a = L.misionesDeSemana('2026-11-16', 'x'), b = L.misionesDeSemana('2026-11-16', 'x');
+    return igual([a.length, new Set(a).size, a.join() === b.join()], [3, 3, true]);
+  });
+  prueba('Mes de la temporada para el jefe', () => igual(
+    ['2026-11-18', '2026-12-17', '2026-12-18', '2027-02-10', '2027-04-18', '2027-05-18'].map(d => L.mesDeTemporada('2026-11-18', d)), [1, 1, 2, 3, 6, 6]));
+
+  // ---------- Pintar resultados ----------
+  const ok = res.filter(r => r.ok).length;
+  document.getElementById('resumen').textContent = ok + ' de ' + res.length + ' pruebas pasaron' + (ok === res.length ? ' ✓' : ' ✗');
+  document.getElementById('lista').innerHTML = res.map(r => '<li class="' + (r.ok ? 'ok' : 'mal') + '">' + (r.ok ? '✓ ' : '✗ ') + r.nombre + (r.detalle ? ' — ' + r.detalle : '') + '</li>').join('');
+  window.RESULTADOS = { ok, total: res.length, fallas: res.filter(r => !r.ok) };
+  </script>
+</body>
+</html>
